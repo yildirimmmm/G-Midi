@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>G-Midi</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+  <nav>
+    <a href="index.html" class="active">Home</a>
+    <a href="settings.html">Settings</a>
+  </nav>
+  <div class="container">
+    <section>
+      <label for="midiFile">Select a .midi file:</label>
+      <input type="file" id="midiFile" accept=".midi,.mid">
+      <button id="uploadBtn">Upload MIDI</button>
+    </section>
+    
+    <section class="player-container" id="playerSection" style="display: none;">
+      <div class="song-info">
+        <div class="song-title" id="songTitle">No file selected</div>
+        <div class="song-duration" id="songDuration"></div>
+      </div>
+      
+      <div class="progress-container" id="progressContainer">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+      
+      <div class="time-info">
+        <span id="currentTime">0:00</span>
+        <span id="totalTime">0:00</span>
+      </div>
+      
+      <div class="controls">
+        <div class="control-group">
+          <button class="control-button" id="backwardBtn">
+            <i class="fas fa-backward-step"></i>
+          </button>
+          <button class="control-button play-pause" id="playPauseBtn">
+            <i class="fas fa-play" id="playPauseIcon"></i>
+          </button>
+          <button class="control-button" id="forwardBtn">
+            <i class="fas fa-forward-step"></i>
+          </button>
+          <button class="control-button" id="stopBtn">
+            <i class="fas fa-stop"></i>
+          </button>
+          <button class="control-button loop-button" id="loopBtn">
+            <i class="fas fa-repeat"></i>
+          </button>
+        </div>
+        
+        <div class="playback-controls">
+  <script>
+    function formatTime(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.floor(seconds % 60);
+        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
+
+    let isPlaying = false;
+    let startTime = 0;
+    let duration = 0;
+    let progressInterval;
+    let pausedTime = 0;
+    let isLooping = false;
+
+    const playerSection = document.getElementById('playerSection');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const midiFileInput = document.getElementById('midiFile');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const playPauseIcon = document.getElementById('playPauseIcon');
+    const stopBtn = document.getElementById('stopBtn');
+    const progressBar = document.getElementById('progressBar');
+    const progressContainer = document.getElementById('progressContainer');
+    const currentTimeEl = document.getElementById('currentTime');
+    const totalTimeEl = document.getElementById('totalTime');
+    const backwardBtn = document.getElementById('backwardBtn');
+    const forwardBtn = document.getElementById('forwardBtn');
+
+    progressContainer.addEventListener('click', async (e) => {
+        if (!duration) return;
+        
+        const rect = progressContainer.getBoundingClientRect();
+        const clickPosition = e.clientX - rect.left;
+        const percentageClicked = (clickPosition / rect.width);
+        const timeToSeek = duration * percentageClicked;
+        
+        await fetch(`/seek?time=${timeToSeek}`);
+        startTime = Date.now() - (timeToSeek * 1000);
+        pausedTime = timeToSeek;
+        
+        progressBar.style.width = `${percentageClicked * 100}%`;
+        currentTimeEl.textContent = formatTime(timeToSeek);
+        
+        if (!isPlaying) {
+            playPauseBtn.click();
+        }
+    });
+
+    backwardBtn.addEventListener('click', async () => {
+        if (!duration) return;
+        
+        const currentTime = isPlaying ? (Date.now() - startTime) / 1000 : pausedTime;
+        const newTime = Math.max(0, currentTime - 5);
+        
+        await fetch(`/seek?time=${newTime}`);
+        startTime = Date.now() - (newTime * 1000);
+        pausedTime = newTime;
+        
+        progressBar.style.width = `${(newTime / duration) * 100}%`;
+        currentTimeEl.textContent = formatTime(newTime);
+        
+        if (!isPlaying) {
+            playPauseBtn.click();
+        }
+    });
+
+    forwardBtn.addEventListener('click', async () => {
+        if (!duration) return;
+        
+        const currentTime = isPlaying ? (Date.now() - startTime) / 1000 : pausedTime;
+        const newTime = Math.min(duration, currentTime + 5);
+        
+        await fetch(`/seek?time=${newTime}`);
+        startTime = Date.now() - (newTime * 1000);
+        pausedTime = newTime;
+        
+        progressBar.style.width = `${(newTime / duration) * 100}%`;
+        currentTimeEl.textContent = formatTime(newTime);
+        
+        if (!isPlaying) {
+            playPauseBtn.click();
+        }
+    });
+
+    function updateProgress() {
+        if (!isPlaying || !duration) return;
+        
+        const currentTime = (Date.now() - startTime) / 1000;
+        const progress = (currentTime / duration) * 100;
+        
+        progressBar.style.width = `${Math.min(progress, 100)}%`;
+        currentTimeEl.textContent = formatTime(currentTime);
+        
+        if (currentTime >= duration) {
+            if (isLooping) {
+                fetch('/seek?time=0').then(() => {
+                    startTime = Date.now();
+                    progressBar.style.width = '0%';
+                    currentTimeEl.textContent = '0:00';
+                });
+            } else {
+                stopPlayback();
+            }
+        }
+        savePlayerState();
+    }
+
+    function startProgressUpdate() {
+        stopProgressUpdate(); 
+        progressInterval = setInterval(updateProgress, 100);
+    }
+
+    function stopProgressUpdate() {
+        if (progressInterval) {
+            clearInterval(progressInterval);
+        }
+    }
+
+    uploadBtn.onclick = async () => {
+        if (!midiFileInput.files.length) {
+            alert("Please select a MIDI file!");
+            return;
+        }
+
+        await fetch('/stop');
+        stopPlayback();
+        
+        const formData = new FormData();
+        formData.append('midiFile', midiFileInput.files[0]);
+        
+        try {
+            const resp = await fetch('/upload', { method: 'POST', body: formData });
+            if (resp.ok) {
+                songTitle.textContent = midiFileInput.files[0].name;
+                playerSection.style.display = 'block';
+                
+                const durationResp = await fetch('/duration');
+                const durationData = await durationResp.json();
+                duration = durationData.duration;
+                totalTimeEl.textContent = formatTime(duration);
+                
+                progressBar.style.width = '0%';
+                currentTimeEl.textContent = '0:00';
+                playPauseIcon.className = 'fas fa-play';
+                savePlayerState();
+            } else {
+                alert("Error: " + await resp.text());
+            }
+        } catch (err) {
+            alert("Server error: " + err.message);
+        }
+    };
+
+    playPauseBtn.onclick = async () => {
+      if (isPlaying) {
+        await fetch('/pause');
+        playPauseIcon.className = 'fas fa-play';
+        stopProgressUpdate();
+        pausedTime = (Date.now() - startTime) / 1000;
+      } else {
+        const seekTime = pausedTime;
+        await fetch(`/seek?time=${seekTime}`);
+        startTime = Date.now() - (seekTime * 1000);
+        playPauseIcon.className = 'fas fa-pause';
+        startProgressUpdate();
+      }
+      isPlaying = !isPlaying;
+      savePlayerState();
+    };
+
+    stopBtn.onclick = async () => {
+      await fetch('/stop');
+      stopPlayback();
+      localStorage.removeItem('playerState'); 
+    };
+
+    backwardBtn.onclick = async () => {
+      const currentTime = isPlaying ? (Date.now() - startTime) / 1000 : pausedTime;
+      const newTime = Math.max(0, currentTime - 5);
+      
+      await fetch(`/seek?time=${newTime}`);
+      startTime = Date.now() - (newTime * 1000);
+      pausedTime = newTime;
+      
+      if (!isPlaying) {
+        progressBar.style.width = `${(newTime / duration) * 100}%`;
+        currentTimeEl.textContent = formatTime(newTime);
+      }
+    };
+
+    forwardBtn.onclick = async () => {
+      const currentTime = isPlaying ? (Date.now() - startTime) / 1000 : pausedTime;
+      const newTime = Math.min(duration, currentTime + 5);
+      
+      await fetch(`/seek?time=${newTime}`);
+      startTime = Date.now() - (newTime * 1000);
+      pausedTime = newTime;
+      
+      if (!isPlaying) {
+        progressBar.style.width = `${(newTime / duration) * 100}%`;
+        currentTimeEl.textContent = formatTime(newTime);
+      }
+    };
+
+    function stopPlayback() {
+      isPlaying = false;
+      playPauseIcon.className = 'fas fa-play';
+      stopProgressUpdate();
+      progressBar.style.width = '0%';
+      currentTimeEl.textContent = '0:00';
+      pausedTime = 0;
+    }
+
+    progressContainer.onclick = async (e) => {
+      const rect = progressContainer.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const percentageClicked = (x / rect.width) * 100;
+      const timeToSeek = (duration * percentageClicked) / 100;
+      
+      await fetch(`/seek?time=${timeToSeek}`);
+      startTime = Date.now() - (timeToSeek * 1000);
+      pausedTime = timeToSeek;
+      
+      if (!isPlaying) {
+        progressBar.style.width = `${percentageClicked}%`;
+        currentTimeEl.textContent = formatTime(timeToSeek);
+      }
+    };
+
+    window.onload = async () => {
+        const savedState = localStorage.getItem('playerState');
+        if (savedState) {
+            const state = JSON.parse(savedState);
+            
+            if (state.fileData) {
+                try {
+                    const blob = await fetch(state.fileData).then(r => r.blob());
+                    const file = new File([blob], state.fileName, { type: 'audio/midi' });
+                    
+                    const formData = new FormData();
+                    formData.append('midiFile', file);
+
+                    const resp = await fetch('/upload', { method: 'POST', body: formData });
+                    if (resp.ok) {
+                        songTitle.textContent = state.fileName;
+                        playerSection.style.display = 'block';
+                        
+                        const durationResp = await fetch('/duration');
+                        const durationData = await durationResp.json();
+                        duration = durationData.duration;
+                        totalTimeEl.textContent = formatTime(duration);
+                        
+                        if (state.isPlaying) {
+                            const currentTime = state.currentTime + ((Date.now() - state.timestamp) / 1000);
+                            if (currentTime < duration) {
+                                await fetch(`/seek?time=${currentTime}`);
+                                startTime = Date.now() - (currentTime * 1000);
+                                isPlaying = true;
+                                playPauseIcon.className = 'fas fa-pause';
+                                startProgressUpdate();
+                            }
+                        } else {
+                            pausedTime = state.currentTime;
+                            progressBar.style.width = `${(pausedTime / duration) * 100}%`;
+                            currentTimeEl.textContent = formatTime(pausedTime);
+                        }
+
+                        const dataTransfer = new DataTransfer();
+                        dataTransfer.items.add(file);
+                        midiFileInput.files = dataTransfer.files;
+                    }
+                } catch (err) {
+                    console.error("Error restoring state:", err);
+                    localStorage.removeItem('playerState'); 
+                }
+            }
+        }
+        const loopState = localStorage.getItem('loopState');
+        if (loopState) {
+            isLooping = JSON.parse(loopState);
+            updateLoopButtonStyle();
+        }
+    };
+
+    function updateLoopButtonStyle() {
+        const loopBtn = document.getElementById('loopBtn');
+        if (isLooping) {
+            loopBtn.classList.add('active');
+            loopBtn.style.color = '#FF5722';
+        } else {
+            loopBtn.classList.remove('active');
+            loopBtn.style.color = '#666';
+        }
+    }
+
+    document.getElementById('loopBtn').onclick = () => {
+        isLooping = !isLooping;
+        updateLoopButtonStyle();
+        localStorage.setItem('loopState', JSON.stringify(isLooping));
+    };
+
+    function savePlayerState() {
+        const currentFile = midiFileInput.files[0];
+        if (currentFile) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const state = {
+                    fileName: currentFile.name,
+                    fileData: e.target.result, 
+                    isPlaying: isPlaying,
+                    currentTime: isPlaying ? (Date.now() - startTime) / 1000 : pausedTime,
+                    timestamp: Date.now(),
+                    isLooping: isLooping 
+                };
+                localStorage.setItem('playerState', JSON.stringify(state));
+            };
+            reader.readAsDataURL(currentFile);
+        }
+    }
+  </script>
+</body>
+</html>

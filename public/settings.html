@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>G-Midi</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="settings.html" class="active">Settings</a>
+  </nav>
+  <div class="container">
+    <section>
+      <h2>Key Mapping</h2>
+      <div class="button-group">
+        <button id="startMappingBtn">Start Key Mapping</button>
+        <button id="abortMappingBtn" class="secondary" style="display: none;">Cancel Mapping</button>
+      </div>
+      <p id="mappingStatus"></p>
+    </section>
+    <section>
+      <h2>Configuration Management</h2>
+      <button id="refreshConfigsBtn" class="secondary">Refresh Config List</button>
+      <table id="configTable">
+        <thead>
+          <tr>
+            <th>Select</th>
+            <th>Config Name</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+        </tbody>
+      </table>
+      <label>
+        <input style="margin-top: 30px;" type="checkbox" id="alwaysOnTopCheckbox"> Keep window always on top (This setting will take effect on the next startup)
+      </label>
+      
+    </section>
+  </div>
+
+  <script>
+    let activeConfig = null;
+
+    async function fetchActiveConfig() {
+      const resp = await fetch('/activeConfig');
+      const data = await resp.json();
+      activeConfig = data.activeConfigName;
+    }
+
+    async function loadConfigs() {
+      await fetchActiveConfig();
+      const resp = await fetch('/configs');
+      const configs = await resp.json();
+      const tbody = document.getElementById('configTable').querySelector('tbody');
+      tbody.innerHTML = '';
+      configs.forEach(cfg => {
+        const tr = document.createElement('tr');
+
+        const tdSelect = document.createElement('td');
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'activeConfig';
+        radio.value = cfg;
+        radio.onclick = () => setActiveConfig(cfg);
+        if(activeConfig === cfg) {
+          radio.checked = true;
+        }
+        tdSelect.appendChild(radio);
+        tr.appendChild(tdSelect);
+
+        const tdName = document.createElement('td');
+        tdName.textContent = cfg;
+        tr.appendChild(tdName);
+
+        const tdActions = document.createElement('td');
+        const actionButtons = document.createElement('div');
+        actionButtons.className = 'action-buttons';
+        
+        const editButton = document.createElement('button');
+        editButton.className = 'action-button';
+        editButton.textContent = '✏️';
+        editButton.onclick = () => window.location.href = `editConfig.html?name=${cfg}`;
+        
+        const deleteButton = document.createElement('button');
+        deleteButton.className = 'action-button';
+        deleteButton.textContent = '🗑️';
+        deleteButton.onclick = async () => {
+          if(confirm(`Are you sure you want to delete config "${cfg}"?`)) {
+            await fetch(`/config?name=${cfg}`, { method: 'DELETE' });
+            loadConfigs();
+          }
+        };
+        
+        actionButtons.appendChild(editButton);
+        actionButtons.appendChild(deleteButton);
+        tdActions.appendChild(actionButtons);
+        tr.appendChild(tdActions);
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function setActiveConfig(cfg) {
+      const resp = await fetch('/setActiveConfig', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ configName: cfg })
+      });
+      const text = await resp.text();
+      alert(text);
+      activeConfig = cfg;
+      loadConfigs();
+    }
+
+    document.getElementById('refreshConfigsBtn').onclick = loadConfigs;
+
+    let isMapping = false;
+    let mappingStatusInterval = null;
+
+    document.getElementById('startMappingBtn').onclick = async () => {
+      const resp = await fetch('/startMapping', { method: 'POST' });
+      const text = await resp.text();
+      document.getElementById('mappingStatus').textContent = text;
+      document.getElementById('startMappingBtn').style.display = 'none';
+      document.getElementById('abortMappingBtn').style.display = 'inline-block';
+      isMapping = true;
+      
+      startMappingStatusCheck();
+    };
+
+    document.getElementById('abortMappingBtn').onclick = async () => {
+      const resp = await fetch('/abortMapping', { method: 'POST' });
+      const text = await resp.text();
+      document.getElementById('mappingStatus').textContent = text;
+      resetMappingUI();
+    };
+
+    function resetMappingUI() {
+      document.getElementById('startMappingBtn').style.display = 'inline-block';
+      document.getElementById('abortMappingBtn').style.display = 'none';
+      isMapping = false;
+      if (mappingStatusInterval) {
+        clearInterval(mappingStatusInterval);
+        mappingStatusInterval = null;
+      }
+    }
+
+    function startMappingStatusCheck() {
+      mappingStatusInterval = setInterval(async () => {
+        try {
+          const response = await fetch('/mappingStatus');
+          const status = await response.json();
+          
+          if (!status.isMapping && isMapping) {
+            resetMappingUI();
+            
+            if (status.mappedKeysCount === 37) {
+              document.getElementById('mappingStatus').textContent = 
+                "All keys recorded. Please give your config file a name with the :save configName command.";
+            }
+          }
+        } catch (error) {
+          console.error('Mapping status check error:', error);
+        }
+      }, 1000);
+    }
+
+    window.onbeforeunload = () => {
+      if (mappingStatusInterval) {
+        clearInterval(mappingStatusInterval);
+      }
+    };
+
+    async function loadSettings() {
+      try {
+        const response = await fetch('/settings.json'); 
+        if (!response.ok) {
+          throw new Error("Failed to load settings");
+        }
+        const settings = await response.json();
+        document.getElementById('alwaysOnTopCheckbox').checked = settings.alwaysOnTop;
+      } catch (error) {
+        console.error("Failed to load settings:", error);
+      }
+    }
+
+    async function saveSettings(value) {
+      try {
+        const response = await fetch('/save-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ alwaysOnTop: value })
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to save settings");
+        }
+
+        window.parent.postMessage({ type: 'setAlwaysOnTop', value }, '*');
+
+      } catch (error) {
+        console.error("Failed to save settings:", error);
+      }
+    }
+
+    document.getElementById('alwaysOnTopCheckbox').addEventListener('change', (event) => {
+      saveSettings(event.target.checked);
+    });
+
+    window.onload = () => {
+      loadSettings();
+      loadConfigs();
+    };
+  </script>
+</body>
+</html>

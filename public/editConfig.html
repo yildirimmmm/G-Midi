@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>G-Midi</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="settings.html">Settings</a>
+    <a href="#" class="active">Edit Config</a>
+  </nav>
+  <div class="container">
+    <section>
+      <form id="editConfigForm">
+        <div>
+          <label for="configName">Config Name:</label>
+          <input type="text" id="configName">
+        </div>
+        <div>
+          <label for="configContent">JSON Content:</label>
+          <textarea id="configContent"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" onclick="window.location.href='settings.html'" class="secondary">Cancel</button>
+          <button type="submit">Save Config</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const originalConfigName = urlParams.get('name');
+    document.getElementById('configName').value = originalConfigName;
+    
+    async function loadConfig() {
+      const resp = await fetch(`/config?name=${originalConfigName}`);
+      const data = await resp.json();
+      document.getElementById('configContent').value = JSON.stringify(data.content, null, 2);
+    }
+    loadConfig();
+
+    document.getElementById('editConfigForm').onsubmit = async (e) => {
+      e.preventDefault();
+      
+      try {
+        const contentStr = document.getElementById('configContent').value;
+        let content;
+        try {
+          content = JSON.parse(contentStr);
+        } catch (err) {
+          alert("Invalid JSON format! Please check your config content.");
+          return;
+        }
+
+        const newName = document.getElementById('configName').value.trim();
+        if (!newName) {
+          alert("Config name cannot be empty!");
+          return;
+        }
+
+        const response = await fetch('/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: originalConfigName,
+            newName: newName,
+            content: content
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText);
+        }
+
+        const successText = await response.text();
+        alert(successText);
+        window.location.href = 'settings.html';
+        
+      } catch (error) {
+        alert(error.message);
+      }
+    };
+  </script>
+</body>
+</html>
