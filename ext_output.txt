@@ -1,7 +1,0 @@
-
-> habbo-midi-extension@1.0.0 start
-> electron . -- -- -- -p 9092 -f G-Midi_1.0 -c 512219151526211022420212183919331025313112381925142507381837835112552922
-
-
-Connected to G-Earth
-G-Earth connection closed
