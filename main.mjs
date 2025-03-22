@@ -381,31 +381,6 @@ app.on('activate', () => {
   }
 });
 
-ext.on('click', () => {
-  const settings = getSettings(); 
-
-  if (mainWindow) {
-    mainWindow.focus();
-  } else {
-    mainWindow = new BrowserWindow({
-      width: 800,
-      height: 600,
-      webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false
-      },
-      alwaysOnTop: settings.alwaysOnTop,
-      autoHideMenuBar: true, 
-      icon: path.join(__dirname, 'public', 'favicon.ico')
-    });
-
-    mainWindow.loadURL(`http://localhost:${PORT}`);
-    mainWindow.on('closed', () => {
-      mainWindow = null;
-    });
-  }
-});
-
 ext.on('disconnect', () => {
   if (mainWindow) {
     mainWindow.close();
