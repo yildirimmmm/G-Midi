@@ -225,7 +225,7 @@
     stopBtn.onclick = async () => {
       await fetch('/stop');
       stopPlayback();
-      localStorage.removeItem('playerState'); 
+      sessionStorage.removeItem('playerState'); 
     };
 
     backwardBtn.onclick = async () => {
@@ -282,11 +282,11 @@
     };
 
     window.onload = async () => {
-        const savedState = localStorage.getItem('playerState');
-        if (savedState) {
+        const savedState = sessionStorage.getItem('playerState');
+        if (savedState) { 
             const state = JSON.parse(savedState);
             
-            if (state.fileData) {
+            if (state && state.fileData) { 
                 try {
                     const blob = await fetch(state.fileData).then(r => r.blob());
                     const file = new File([blob], state.fileName, { type: 'audio/midi' });
@@ -325,11 +325,12 @@
                     }
                 } catch (err) {
                     console.error("Error restoring state:", err);
-                    localStorage.removeItem('playerState'); 
+                    sessionStorage.removeItem('playerState');
                 }
             }
         }
-        const loopState = localStorage.getItem('loopState');
+        
+        const loopState = sessionStorage.getItem('loopState');
         if (loopState) {
             isLooping = JSON.parse(loopState);
             updateLoopButtonStyle();
@@ -350,7 +351,7 @@
     document.getElementById('loopBtn').onclick = () => {
         isLooping = !isLooping;
         updateLoopButtonStyle();
-        localStorage.setItem('loopState', JSON.stringify(isLooping));
+        sessionStorage.setItem('loopState', JSON.stringify(isLooping)); 
     };
 
     function savePlayerState() {
@@ -366,7 +367,7 @@
                     timestamp: Date.now(),
                     isLooping: isLooping 
                 };
-                localStorage.setItem('playerState', JSON.stringify(state));
+                sessionStorage.setItem('playerState', JSON.stringify(state)); 
             };
             reader.readAsDataURL(currentFile);
         }
